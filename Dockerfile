@@ -14,4 +14,4 @@ ENV FLASK_ENV=production
 
 EXPOSE 5000
 
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--log-level", "debug", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--log-level", "debug", "app:create_app"]
