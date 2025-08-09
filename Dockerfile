@@ -1,21 +1,12 @@
 FROM python:3.11-slim
-
 WORKDIR /app
-
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
 COPY src/ .
-
-RUN apt-get update && apt-get install -y bash
-RUN chmod +x /app/entrypoint.sh
-
-RUN ls -la /app  # Debug: Verify files copied
-RUN ls -la /app/templates  # Debug: Verify templates
-
-ENV FLASK_APP=app.py
+COPY wsgi.py .
+RUN ls -la /app
+RUN ls -la /app/templates
+ENV FLASK_APP=wsgi.py
 ENV FLASK_ENV=production
-
 EXPOSE 5000
-
-CMD ["src/entrypoint.sh"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--log-level", "debug", "wsgi:app"]
