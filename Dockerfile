@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ .
 
+RUN apt-get update && apt-get install -y bash
 RUN chmod +x /app/entrypoint.sh
 
 RUN ls -la /app  # Debug: Verify files copied
@@ -17,4 +18,4 @@ ENV FLASK_ENV=production
 
 EXPOSE 5000
 
-CMD ["/app/src/entrypoint.sh"]
+CMD ["src/entrypoint.sh"]
