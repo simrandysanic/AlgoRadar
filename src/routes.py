@@ -1,154 +1,89 @@
-from flask import Blueprint, request, jsonify, current_app, render_template
-import jwt
-from config import Config
-from db import add_question, get_questions_by_user
+from flask import Blueprint, request, jsonify, current_app
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from bson import ObjectId
+from datetime import datetime
+
+# Import cache utilities and database functions
 from cache import cache_get_questions, cache_set_questions
-import datetime
-from bson import json_util
-from datetime import timedelta
+from db import add_question as db_add_question, get_questions_by_user
 
 questions_bp = Blueprint('questions', __name__, url_prefix="/api")
 
-
-def verify_jwt_token(token):
-    try:
-        decoded = jwt.decode(token, Config.SECRET_KEY, algorithms=['HS256'])
-        return decoded['email']
-    except jwt.ExpiredSignatureError:
-        return None
-    except jwt.InvalidTokenError:
-        return None
-
-
 @questions_bp.route('/questions', methods=['POST'])
-def add_question_route():
+@jwt_required()
+def add_question():
+    """API endpoint to add a new question to the database."""
+    user_id = get_jwt_identity()
+    data = request.get_json()
+
+    # --- Validation ---
+    required_fields = ["url", "difficulty", "topic", "solved", "needs_revision"]
+    if not all(field in data for field in required_fields):
+        return jsonify({"error": "Missing required fields"}), 400
+
+    if data["difficulty"] not in ["Easy", "Medium", "Hard"]:
+        return jsonify({"error": "Invalid difficulty"}), 400
+
+    # Auto set date_solved if solved = True
+    if data.get("solved"):
+        data["date_solved"] = datetime.utcnow().isoformat()
+
+    data["timestamp"] = datetime.utcnow()
+
+    # --- Call database layer to add question ---
     try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Missing or invalid token'}), 401
-
-        token = auth_header.split(' ')[1]
-        user_email = verify_jwt_token(token)
-        if not user_email:
-            return jsonify({'error': 'Invalid or expired token'}), 401
-
-        data = request.get_json()
-        if not all(key in data for key in ['url', 'difficulty', 'topic', 'solved', 'needs_revision']):
-            return jsonify({'error': 'Missing required fields'}), 400
-
-        if data['difficulty'] not in ['Easy', 'Medium', 'Hard']:
-            return jsonify({'error': 'Invalid difficulty'}), 400
-
-        question_data = {
-            'url': data['url'],
-            'difficulty': data['difficulty'],
-            'topic': data['topic'],
-            'solved': data['solved'],
-            'needs_revision': data['needs_revision'],
-            'code': data.get('code', ''),
-            'timestamp': datetime.datetime.utcnow()
-        }
-
-        question_id = add_question(user_email, question_data)
-        return jsonify({'message': 'Question added successfully', 'question_id': question_id}), 201
+        question_id = db_add_question(user_id, data)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error adding question via db layer: {str(e)}")
+        return jsonify({"error": "Failed to add question"}), 500
+
+    # --- Clear relevant Redis caches for this user ---
+    try:
+        if current_app.redis:
+            # Delete dashboard cache
+            current_app.redis.delete(f"dashboard:{user_id}")
+            # Delete all question list caches for the user
+            pattern = f"questions:{user_id}:*"
+            keys_to_delete = current_app.redis.keys(pattern)
+            if keys_to_delete:
+                current_app.redis.delete(*keys_to_delete)
+                current_app.logger.info(f"Cleared {len(keys_to_delete)} cache entries for user {user_id}")
+    except Exception as e:
+        current_app.logger.error(f"Error clearing cache for user {user_id}: {str(e)}")
+
+    return jsonify({"message": "Question added successfully", "id": question_id}), 201
 
 
 @questions_bp.route('/questions', methods=['GET'])
+@jwt_required()
 def get_questions():
+    """API endpoint to get questions with optional filters."""
+    user_id = get_jwt_identity()
+    difficulty = request.args.get("difficulty")
+    topic = request.args.get("topic")
+
+    # Build query for caching and DB lookup
+    query_params = {}
+    if difficulty:
+        query_params["difficulty"] = difficulty
+    if topic:
+        query_params["topic"] = topic
+
+    # --- Try Redis cache first ---
+    cached_data, cached = cache_get_questions(str(user_id), query_params)
+    if cached:
+        current_app.logger.info(f"Questions cache hit for user {user_id} with params {query_params}")
+        return jsonify({"questions": cached_data, "cached": True}), 200
+
+    # --- If cache miss, fetch from MongoDB via db layer ---
+    current_app.logger.info(f"Questions cache miss for user {user_id} with params {query_params}")
     try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Missing or invalid token'}), 401
-
-        token = auth_header.split(' ')[1]
-        user_email = verify_jwt_token(token)
-        if not user_email:
-            return jsonify({'error': 'Invalid or expired token'}), 401
-
-        topic = request.args.get('topic')
-        difficulty = request.args.get('difficulty')
-        solved = request.args.get('solved')
-        needs_revision = request.args.get('needs_revision')
-
-        query = {'user_email': user_email}
-        if topic:
-            query['topic'] = topic
-        if difficulty in ['Easy', 'Medium', 'Hard']:
-            query['difficulty'] = difficulty
-        if solved is not None:
-            query['solved'] = solved.lower() == 'true'
-        if needs_revision is not None:
-            query['needs_revision'] = needs_revision.lower() == 'true'
-
-        query_params = {
-            'topic': topic,
-            'difficulty': difficulty,
-            'solved': solved,
-            'needs_revision': needs_revision
-        }
-
-        cached_questions, is_cached = cache_get_questions(user_email, query_params)
-        if is_cached:
-            return jsonify({'questions': cached_questions, 'cached': True}), 200
-
-        questions = get_questions_by_user(user_email, query)
-        cache_set_questions(user_email, query_params, json_util.dumps(questions))
-
-        return jsonify({'questions': json_util.dumps(questions), 'cached': False}), 200
+        problems = get_questions_by_user(user_id, query_params)
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        current_app.logger.error(f"Error getting questions via db layer: {str(e)}")
+        return jsonify({"error": "Failed to retrieve questions"}), 500
 
+    # --- Store in Redis for 1 hour ---
+    cache_set_questions(str(user_id), query_params, problems)
 
-# @questions_bp.route('/dashboard', methods=['GET'])
-# def dashboard():
-#     user_email = "test@example.com"  # hardcode a valid email in your DB for now
-#     try:
-#         auth_header = request.headers.get('Authorization')
-#         if not auth_header or not auth_header.startswith('Bearer '):
-#             return jsonify({'error': 'Missing or invalid token'}), 401
-
-#         token = auth_header.split(' ')[1]
-#         user_email = verify_jwt_token(token)
-#         if not user_email:
-#             return jsonify({'error': 'Invalid or expired token'}), 401
-
-#         # Get all questions for the user
-#         questions = get_questions_by_user(user_email, {'user_email': user_email})
-@questions_bp.route('/dashboard', methods=['GET'])
-def dashboard():
-    try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({'error': 'Missing or invalid token'}), 401
-        token = auth_header.split(' ')[1]
-        user_email = verify_jwt_token(token)
-        if not user_email:
-            return jsonify({'error': 'Invalid or expired token'}), 401
-        questions = get_questions_by_user(user_email, {'user_email': user_email})
-        total_problems = len(questions)
-        difficulty_counts = {'Easy': 0, 'Medium': 0, 'Hard': 0}
-        for q in questions:
-            difficulty_counts[q['difficulty']] += 1
-        solved_dates = sorted([q['timestamp'].date() for q in questions if q['solved']])
-        streak = 0
-        if solved_dates:
-            today = datetime.datetime.utcnow().date()
-            current_date = solved_dates[-1]
-            while current_date >= today - timedelta(days=streak):
-                if current_date in solved_dates:
-                    streak += 1
-                    current_date -= timedelta(days=1)
-                else:
-                    break
-        chart_data = {
-            'labels': ['Easy', 'Medium', 'Hard'],
-            'datasets': [{
-                'data': [difficulty_counts['Easy'], difficulty_counts['Medium'], difficulty_counts['Hard']],
-                'backgroundColor': ['#36A2EB', '#FFCE56', '#FF6384']
-            }]
-        }
-        return render_template('dashboard.html', total_problems=total_problems, streak=streak, chart_data=chart_data)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    return jsonify({"questions": problems, "cached": False}), 200
