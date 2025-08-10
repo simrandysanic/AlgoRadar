@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AlgoRadar Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/theme/dracula.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/theme/eclipse.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/clike/clike.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/python/python.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root {
+            --bg-color: #f0f2f5; --main-bg: #ffffff; --text-color: #1c1e21;
+            --border-color: #dddfe2; --primary-color: #42b983; --easy-color: #2ecc71;
+            --medium-color: #f39c12; --hard-color: #e74c3c; --streak-color: #38a169;
+            --header-bg: #ffffff; --card-bg: #ffffff; --hover-bg: #f0f2f5;
+            --text-secondary: #606770;
+        }
+        .dark-mode {
+            --bg-color: #18191a; --main-bg: #242526; --text-color: #e4e6eb;
+            --border-color: #3a3b3c; --primary-color: #42b983;
+            --header-bg: #242526; --card-bg: #242526; --hover-bg: #3a3b3c;
+            --text-secondary: #b0b3b8;
+        }
+        html, body { height: 100vh; margin: 0; overflow: hidden; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color); color: var(--text-color);
+            display: flex; flex-direction: column; transition: background-color 0.3s, color 0.3s;
+            font-size: 14px;
+        }
+        .header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 25px; background-color: var(--header-bg);
+            border-bottom: 1px solid var(--border-color); flex-shrink: 0;
+            position: sticky; top: 0; z-index: 100;
+        }
+        .header-left, .header-right { display: flex; align-items: center; gap: 20px; }
+        .logout-btn {
+            background-color: var(--hover-bg); border: 1px solid var(--border-color); border-radius: 6px;
+            padding: 8px 12px; font-weight: 600; cursor: pointer; color: var(--text-color);
+            display: flex; align-items: center; gap: 8px;
+        }
+        .logout-btn:hover { background-color: var(--border-color); }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1fr 2.5fr;
+            grid-template-rows: auto 1fr;
+            gap: 20px;
+            padding: 20px;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+        .pie-chart-card, .revision-queue-card, .problem-list-card {
+            grid-row: 2 / 3;
+        }
+        .card {
+            background: var(--card-bg); border-radius: 8px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1); padding: 20px;
+            display: flex; flex-direction: column;
+            min-height: 0;
+        }
+        .card-content { overflow-y: auto; flex-grow: 1; }
+         .pie-chart-card .card-content {
+            position: relative;
+            height: 100%; /* Ensure the container has height */
+        }
+        .pie-chart-card canvas {
+            width: 100% !important;
+            height: 100% !important;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .full-width { grid-column: 1 / -1; }
+        h1, h2 { color: var(--text-color); margin: 0; }
+        h1 { font-size: 24px; }
+        h2 { margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; font-size: 18px; flex-shrink: 0; }
+        
+        .btn { padding: 10px 15px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+        .btn-primary { background-color: var(--primary-color); color: white; }
+        
+        .activity-header { display: flex; justify-content: space-between; align-items: center; }
+        .streak-container { display: flex; gap: 10px; margin-top: 10px; }
+        .streak-chart-wrapper { overflow-x: auto; flex-grow: 1; }
+        .month-labels { display: grid; grid-auto-flow: column; gap: 3px; font-size: 10px; color: var(--text-secondary); padding-left: 15px; }
+        .streak-chart { display: grid; grid-template-rows: repeat(7, 1fr); grid-auto-flow: column; gap: 3px; }
+        .streak-day { width: 11px; height: 11px; background-color: var(--hover-bg); border-radius: 2px; cursor: pointer; }
+        .streak-day.level-1 { background-color: #9be9a8; }
+        .streak-day.level-2 { background-color: #40c463; }
+        .streak-day.level-3 { background-color: #30a14e; }
+        .streak-day.level-4 { background-color: var(--streak-color); }
+
+        .filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 15px; }
+        .filters input, .filters select { padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); background-color: var(--bg-color); color: var(--text-color); font-size: 13px; }
+        .search-filter { flex-grow: 1; }
+        .problem-table { width: 100%; border-collapse: collapse; }
+        .problem-table th, .problem-table td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border-color); font-size: 13px; }
+        .problem-table th { font-weight: 600; }
+        .difficulty-badge { padding: 3px 8px; border-radius: 12px; color: white; font-size: 11px; font-weight: 600; }
+        .difficulty-Easy { background-color: var(--easy-color); }
+        .difficulty-Medium { background-color: var(--medium-color); }
+        .difficulty-Hard { background-color: var(--hard-color); }
+        .action-buttons button { background: none; border: none; cursor: pointer; font-size: 14px; color: var(--text-secondary); padding: 5px; }
+        .action-buttons button:hover { color: var(--primary-color); }
+
+        .revision-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-radius: 6px; margin-bottom: 8px; transition: background-color 0.2s; cursor: pointer; }
+        .revision-item:hover { background-color: var(--hover-bg); }
+        .revision-item-title { font-weight: 600; font-size: 13px; }
+
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); display: none; justify-content: center;
+            align-items: center; z-index: 1000;
+        }
+        .modal-content {
+            background: var(--card-bg); padding: 25px; border-radius: 8px; width: 90%;
+            max-width: 800px; max-height: 90vh; overflow-y: auto; position: relative;
+        }
+        .modal-close { position: absolute; top: 15px; right: 15px; font-size: 24px; cursor: pointer; border: none; background: none; color: var(--text-color); }
+        .modal-content h2 { margin-top: 0; }
+        .modal-content .CodeMirror { border: 1px solid var(--border-color); border-radius: 6px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 600; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; background-color: var(--bg-color); color: var(--text-color); }
+        .complexity-group { display: flex; gap: 10px; }
+        .checkbox-group { display: flex; align-items: center; gap: 20px; }
+        .checkbox-group label { display: flex; align-items: center; gap: 5px; font-weight: normal;}
+        .form-actions { display: flex; gap: 10px; }
+        .tags-input-container { display: flex; flex-wrap: wrap; gap: 5px; padding: 5px; border: 1px solid var(--border-color); border-radius: 6px; }
+        .tag { background: var(--primary-color); color: white; padding: 5px 8px; border-radius: 4px; display: flex; align-items: center; gap: 5px; }
+        .tag-remove { cursor: pointer; }
+        .tags-input { border: none; outline: none; flex-grow: 1; padding: 5px; background-color: transparent; color: var(--text-color); }
+        #tags-suggestions {
+            border: 1px solid var(--border-color); border-radius: 6px; max-height: 150px;
+            overflow-y: auto; background-color: var(--card-bg); position: absolute;
+            width: calc(100% - 42px); z-index: 10;
+        }
+        .suggestion-item { padding: 8px; cursor: pointer; }
+        .suggestion-item:hover, .suggestion-item.selected { background-color: var(--hover-bg); }
+
+        #theme-toggle-btn {
+            background: none; border: none; color: var(--text-secondary);
+            cursor: pointer; font-size: 20px; padding: 5px;
+            position: relative; width: 30px; height: 30px;
+        }
+        #theme-toggle-btn .fa-sun, #theme-toggle-btn .fa-moon {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            transition: opacity 0.3s, transform 0.3s;
+        }
+        #theme-toggle-btn .fa-moon { opacity: 0; transform: translate(-50%, -50%) rotate(-90deg); }
+        .dark-mode #theme-toggle-btn .fa-sun { opacity: 0; transform: translate(-50%, -50%) rotate(90deg); }
+        .dark-mode #theme-toggle-btn .fa-moon { opacity: 1; transform: translate(-50%, -50%) rotate(0deg); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-left">
+            <h1><i class="fas fa-satellite-dish"></i> AlgoRadar</h1>
+            <button class="btn btn-primary" onclick="openAddModal()">
+                <i class="fas fa-plus"></i> Add Problem
+            </button>
+        </div>
+        <div class="header-right">
+            <button id="theme-toggle-btn" title="Toggle theme">
+                <i class="fas fa-sun"></i>
+                <i class="fas fa-moon"></i>
+            </button>
+            <button class="logout-btn" onclick="window.location.href='/logout'">
+                <i class="fas fa-sign-out-alt"></i><span>Logout</span>
+            </button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card full-width">
+            <div class="activity-header"><h2>Activity</h2><select id="yearFilter" onchange="renderAllComponents()"></select></div>
+            <div class="streak-container">
+                <div class="day-labels"></div>
+                <div class="streak-chart-wrapper">
+                    <div id="month-labels" class="month-labels"></div>
+                    <div id="streak-chart" class="streak-chart"></div>
+                </div>
+            </div>
+        </div>
+        <div class="card pie-chart-card">
+            <h2>Difficulty Breakdown</h2>
+            <div class="card-content">
+                <canvas id="difficultyPieChart"></canvas>
+            </div>
+        </div>
+        <div class="card revision-queue-card">
+            <h2>Revision Queue</h2>
+            <div id="revisionQueueList" class="card-content"></div>
+        </div>
+        <div class="card problem-list-card">
+            <h2>Problem List</h2>
+            <div class="filters">
+                <input type="text" id="searchFilter" class="search-filter" placeholder="Search..." onkeyup="loadProblems()">
+                <select id="difficultyFilter" onchange="loadProblems()"><option value="">All Difficulties</option><option value="Easy">Easy</option><option value="Medium">Medium</option><option value="Hard">Hard</option></select>
+                <select id="statusFilter" onchange="loadProblems()"><option value="">All Statuses</option><option value="solved_revision">Solved + Revision</option><option value="solved_only">Solved Only</option></select>
+            </div>
+            <div class="card-content">
+                <table class="problem-table"><thead><tr><th>Title</th><th>Difficulty</th><th>Tags</th><th>Actions</th></tr></thead><tbody id="problemsTableBody"></tbody></table>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADD/EDIT MODAL -->
+    <div id="addEditModal" class="modal-overlay" onclick="closeAddModal(event)">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeAddModal({target: document.getElementById('addEditModal')})">&times;</button>
+            <h2 id="modalTitle">Add Problem</h2>
+            <input type="hidden" id="problemId">
+            <div class="form-group"><label for="title">Title</label><input type="text" id="title" placeholder="e.g., Two Sum"></div>
+            <div class="form-group"><label for="url">URL</label><input type="text" id="url" placeholder="https://leetcode.com/problems/two-sum/"></div>
+            <div class="form-group"><label for="difficulty">Difficulty</label><select id="difficulty"><option value="Easy">Easy</option><option value="Medium">Medium</option><option value="Hard">Hard</option></select></div>
+            <div class="form-group" style="position: relative;"><label for="tags">Tags</label><div class="tags-input-container"><input type="text" id="tags-input" class="tags-input" placeholder="Add tags..."></div><div id="tags-suggestions" style="display: none;"></div></div>
+            <div class="form-group complexity-group"><div style="flex: 1;"><label for="time_complexity">Time</label><input type="text" id="time_complexity" placeholder="e.g., O(n)"></div><div style="flex: 1;"><label for="space_complexity">Space</label><input type="text" id="space_complexity" placeholder="e.g., O(1)"></div></div>
+            <div class="form-group"><label for="notes">Notes</label><textarea id="notes" rows="3" placeholder="Approach, edge cases..."></textarea></div>
+            <div class="form-group"><label for="code">Code</label><textarea id="codeEditor"></textarea></div>
+            <div class="form-group checkbox-group"><label><input type="checkbox" id="solved">Solved</label><label><input type="checkbox" id="needs_revision">Needs Revision</label></div>
+            <div class="form-actions"><button id="submitBtn" class="btn btn-primary" onclick="submitProblem()">Add Problem</button></div>
+        </div>
+    </div>
+
+    <!-- PEEK MODAL -->
+    <div id="peekModal" class="modal-overlay" onclick="closePeekModal(event)">
+        <div class="modal-content"><button class="modal-close" onclick="closePeekModal({target: document.getElementById('peekModal')})">&times;</button><h2 id="peekTitle"></h2><p><strong>Difficulty:</strong> <span id="peekDifficulty"></span> | <strong>Time:</strong> <span id="peekTime"></span> | <strong>Space:</strong> <span id="peekSpace"></span></p><p><strong>Tags:</strong> <span id="peekTags"></span></p><h3>Notes</h3><p id="peekNotes" style="white-space: pre-wrap;"></p><h3>Code</h3><div id="peekCode"></div></div>
+    </div>
+
+    <!-- DAY DETAIL MODAL -->
+    <div id="dayDetailModal" class="modal-overlay" onclick="closeDayDetailModal(event)">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeDayDetailModal({target: document.getElementById('dayDetailModal')})">&times;</button>
+            <h2 id="dayDetailTitle"></h2>
+            <div id="dayDetailList" class="card-content"></div>
+        </div>
+    </div>
+
+    <script>
+    // --- STATE & DOM ELEMENTS ---
+    let allProblems = [], allTags = [], currentTags = [], editor, peekEditor, pieChart;
+    const tagInput = document.getElementById('tags-input'), tagsContainer = document.querySelector('.tags-input-container'), suggestionsPanel = document.getElementById('tags-suggestions');
+    
+    // --- INITIALIZATION ---
+    window.addEventListener('load', async () => {
+        initializeEditorsAndCharts();
+        initializeTheme();
+        populateYearFilter();
+        await Promise.all([loadProblems(), loadAllTags()]);
+        adjustPieSize();
+    });
+
+    // Add resize listener
+    window.addEventListener('resize', adjustPieSize);
+
+    function adjustPieSize() {
+        const pieCard = document.querySelector('.pie-chart-card');
+        const pieContent = document.querySelector('.pie-chart-card .card-content');
+        if (pieCard && pieContent) {
+            pieContent.style.height = `${pieCard.offsetWidth}px`; // Match height to width for a circular fit
+            pieChart.resize(); // Trigger chart resize
+        }
+    }
+
+    function initializeEditorsAndCharts() {
+        editor = CodeMirror.fromTextArea(document.getElementById('codeEditor'), { lineNumbers: true, mode: 'text/x-c++src', theme: 'dracula', indentUnit: 4 });
+        peekEditor = CodeMirror(document.getElementById('peekCode'), { lineNumbers: true, mode: 'text/x-c++src', theme: 'dracula', readOnly: true });
+        
+        const pieCtx = document.getElementById('difficultyPieChart').getContext('2d');
+        pieChart = new Chart(pieCtx, {
+            type: 'doughnut',
+            data: { labels: [], datasets: [{ data: [], backgroundColor: ['rgb(46, 204, 113)', 'rgb(243, 156, 18)', 'rgb(231, 76, 60)'] }] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                aspectRatio: 1,
+                layout: {
+                    padding: 0
+                },
+                plugins: {
+                    legend: { position: 'top', labels: { boxWidth: 10 } },
+                    title: { display: true, text: 'Total Solved: 0', padding: { top: 10, bottom: 10 }, font: { size: 16 } },
+                    datalabels: {
+                        formatter: (value, ctx) => {
+                            let sum = ctx.chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+                            if (sum === 0 || value === 0) return '';
+                            let percentage = (value * 100 / sum).toFixed(0) + "%";
+                            return `${value}\n(${percentage})`;
+                        },
+                        color: '#fff',
+                        font: { weight: 'bold', size: 14 }
+                    }
+                }
+            },
+            plugins: [ChartDataLabels]
+        });
+    }
+
+    function populateYearFilter() {
+        const yearFilter = document.getElementById('yearFilter');
+        const currentYear = new Date().getFullYear();
+        for (let i = currentYear; i >= currentYear - 5; i--) {
+            const option = document.createElement('option');
+            option.value = i; option.textContent = i;
+            yearFilter.appendChild(option);
+        }
+    }
+
+    // --- DATA FETCHING ---
+    async function loadProblems() {
+        const token = localStorage.getItem("token");
+        if (!token) { window.location.href = "/login"; return; }
+        const difficulty = document.getElementById("difficultyFilter").value, status = document.getElementById("statusFilter").value, search = document.getElementById("searchFilter").value;
+        let url = `/api/questions?`;
+        if (difficulty) url += `difficulty=${difficulty}&`;
+        if (status) url += `status=${status}&`;
+        if (search) url += `search=${search}&`;
+        try {
+            const res = await fetch(url, { headers: { "Authorization": "Bearer " + token } });
+            if (res.status === 401) { window.location.href = "/login"; return; }
+            const result = await res.json();
+            allProblems = result.questions || [];
+            renderAllComponents();
+        } catch (e) { console.error("Failed to load problems", e); }
+    }
+    
+    async function loadAllTags() {
+        const token = localStorage.getItem("token");
+        try {
+            const res = await fetch('/api/tags', { headers: { "Authorization": "Bearer " + token } });
+            allTags = (await res.json()).tags || [];
+        } catch (e) { console.error("Failed to load tags", e); }
+    }
+    
+    // --- RENDERING ---
+    function renderAllComponents() {
+        renderProblemTable(allProblems);
+        renderStreakChart();
+        renderPieChart();
+        renderRevisionQueue();
+    }
+
+    function renderProblemTable(problems) {
+        const tableBody = document.getElementById("problemsTableBody");
+        tableBody.innerHTML = "";
+        problems.forEach(p => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td><a href="javascript:void(0)" onclick="showPeekModal('${p._id}')">${p.title}</a></td>
+                <td><span class="difficulty-badge difficulty-${p.difficulty}">${p.difficulty}</span></td>
+                <td>${(p.tags || []).join(', ')}</td>
+                <td class="action-buttons">
+                    <button onclick="showPeekModal('${p._id}')" title="Peek"><i class="fas fa-eye"></i></button>
+                    <button onclick="editProblem('${p._id}')" title="Edit"><i class="fas fa-pencil-alt"></i></button>
+                    <button onclick="deleteProblem('${p._id}')" title="Delete"><i class="fas fa-trash-alt"></i></button>
+                </td>
+            `;
+            tableBody.appendChild(row);
+        });
+    }
+
+    function renderPieChart() {
+        const solvedProblems = allProblems.filter(p => p.solved);
+        const counts = solvedProblems.reduce((acc, p) => {
+            acc[p.difficulty] = (acc[p.difficulty] || 0) + 1;
+            return acc;
+        }, { Easy: 0, Medium: 0, Hard: 0 });
+        
+        pieChart.data.labels = Object.keys(counts);
+        pieChart.data.datasets[0].data = Object.values(counts);
+        pieChart.options.plugins.title.text = `Total Solved: ${solvedProblems.length}`;
+        pieChart.update();
+    }
+    
+    function renderStreakChart() {
+        const year = document.getElementById('yearFilter').value;
+        const contributions = allProblems.filter(p => p.solved && p.date_solved && new Date(p.date_solved).getFullYear() == year).reduce((acc, p) => {
+            const date = p.date_solved.split('T')[0];
+            acc[date] = (acc[date] || 0) + 1; return acc;
+        }, {});
+        
+        const chart = document.getElementById('streak-chart'), monthLabels = document.getElementById('month-labels');
+        chart.innerHTML = ''; 
+        monthLabels.innerHTML = '';
+        
+        const startDate = new Date(year, 0, 1);
+        const endDate = new Date(year, 11, 31);
+        
+        let currentMonth = -1;
+        
+        for (let i = 0; i < startDate.getDay(); i++) {
+            chart.appendChild(document.createElement('div'));
+        }
+
+        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+            if (d.getDate() === 1 && d.getMonth() !== currentMonth) {
+                const monthLabel = document.createElement('div');
+                monthLabel.textContent = d.toLocaleString('default', { month: 'short' });
+                const weekIndex = Math.floor((chart.children.length) / 7);
+                monthLabel.style.gridColumn = `${weekIndex + 1} / span 4`;
+                monthLabels.appendChild(monthLabel);
+                currentMonth = d.getMonth();
+            }
+
+            const day = document.createElement('div');
+            day.classList.add('streak-day');
+            const dateString = d.toISOString().split('T')[0];
+            day.dataset.date = dateString;
+            const count = contributions[dateString];
+            if (count) {
+                let level = 'level-1';
+                if (count > 2) level = 'level-2';
+                if (count > 4) level = 'level-3';
+                if (count > 6) level = 'level-4';
+                day.classList.add(level);
+                day.onclick = () => showDayDetailModal(dateString);
+            }
+            chart.appendChild(day);
+        }
+    }
+    
+    function renderRevisionQueue() {
+        const queueList = document.getElementById('revisionQueueList');
+        queueList.innerHTML = '';
+        allProblems.filter(p => p.needs_revision).forEach(p => {
+            const item = document.createElement('div');
+            item.className = 'revision-item';
+            item.onclick = () => showPeekModal(p._id);
+            item.innerHTML = `<span class="revision-item-title">${p.title}</span><span class="difficulty-badge difficulty-${p.difficulty}">${p.difficulty}</span>`;
+            queueList.appendChild(item);
+        });
+    }
+
+    // --- MODAL & FORM CONTROLS ---
+    function openAddModal() {
+        clearForm();
+        document.getElementById('modalTitle').textContent = 'Add Problem';
+        document.getElementById('submitBtn').textContent = 'Add Problem';
+        document.getElementById('addEditModal').style.display = 'flex';
+        setTimeout(() => editor.refresh(), 1);
+    }
+    
+    function closeAddModal(event) {
+        if (event.target === document.getElementById('addEditModal') || event.target.classList.contains('modal-close')) {
+            document.getElementById('addEditModal').style.display = 'none';
+        }
+    }
+
+    function clearForm() {
+        ['problemId', 'title', 'url', 'time_complexity', 'space_complexity', 'notes'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('difficulty').value = 'Easy';
+        editor.setValue('');
+        ['solved', 'needs_revision'].forEach(id => document.getElementById(id).checked = false);
+        currentTags = []; renderTags();
+    }
+
+    function editProblem(id) {
+        openAddModal();
+        const p = allProblems.find(p => p._id === id);
+        if (!p) return;
+        document.getElementById('modalTitle').textContent = 'Edit Problem';
+        document.getElementById('submitBtn').textContent = 'Update Problem';
+        document.getElementById('problemId').value = p._id;
+        document.getElementById('title').value = p.title;
+        document.getElementById('url').value = p.url;
+        document.getElementById('difficulty').value = p.difficulty;
+        document.getElementById('time_complexity').value = p.time_complexity || '';
+        document.getElementById('space_complexity').value = p.space_complexity || '';
+        document.getElementById('notes').value = p.notes;
+        editor.setValue(p.code);
+        document.getElementById('solved').checked = p.solved;
+        document.getElementById('needs_revision').checked = p.needs_revision;
+        currentTags = [...(p.tags || [])]; renderTags();
+    }
+
+    async function submitProblem() {
+        const token = localStorage.getItem("token"), id = document.getElementById('problemId').value;
+        const data = {
+            title: document.getElementById('title').value, url: document.getElementById('url').value,
+            difficulty: document.getElementById('difficulty').value, tags: currentTags,
+            time_complexity: document.getElementById('time_complexity').value,
+            space_complexity: document.getElementById('space_complexity').value,
+            notes: document.getElementById('notes').value, code: editor.getValue(),
+            solved: document.getElementById('solved').checked, needs_revision: document.getElementById('needs_revision').checked,
+        };
+        const method = id ? 'PUT' : 'POST', url = id ? `/api/questions/${id}` : '/api/questions';
+        try {
+            const res = await fetch(url, { method, headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token }, body: JSON.stringify(data) });
+            if (res.ok) { closeAddModal({target: document.getElementById('addEditModal')}); await loadProblems(); await loadAllTags(); }
+            else { alert(`Error: ${(await res.json()).error}`); }
+        } catch (e) { console.error("Failed to submit", e); }
+    }
+
+    async function deleteProblem(id) {
+        if (!confirm("Are you sure?")) return;
+        const token = localStorage.getItem("token");
+        try {
+            await fetch(`/api/questions/${id}`, { method: 'DELETE', headers: { "Authorization": "Bearer " + token } });
+            await loadProblems();
+        } catch (e) { console.error("Failed to delete", e); }
+    }
+
+    function showPeekModal(id) {
+        const p = allProblems.find(p => p._id === id);
+        if (!p) return;
+        document.getElementById('peekTitle').textContent = p.title;
+        document.getElementById('peekDifficulty').innerHTML = `<span class="difficulty-badge difficulty-${p.difficulty}">${p.difficulty}</span>`;
+        document.getElementById('peekTime').textContent = p.time_complexity || 'N/A';
+        document.getElementById('peekSpace').textContent = p.space_complexity || 'N/A';
+        document.getElementById('peekTags').textContent = (p.tags || []).join(', ');
+        document.getElementById('peekNotes').textContent = p.notes || 'No notes.';
+        peekEditor.setValue(p.code || '// No code.');
+        document.getElementById('peekModal').style.display = 'flex';
+        setTimeout(() => peekEditor.refresh(), 1);
+    }
+    function closePeekModal(e) { if (e.target.classList.contains('modal-overlay') || e.target.classList.contains('modal-close')) { document.getElementById('peekModal').style.display = 'none'; } }
+    
+    function showDayDetailModal(dateString) {
+        const problemsOnDate = allProblems.filter(p => p.date_solved && p.date_solved.startsWith(dateString));
+        const modal = document.getElementById('dayDetailModal');
+        const list = document.getElementById('dayDetailList');
+        document.getElementById('dayDetailTitle').textContent = `Problems Solved on ${new Date(dateString + 'T00:00:00').toLocaleDateString()}`;
+        list.innerHTML = '';
+        problemsOnDate.forEach(p => {
+            const item = document.createElement('div');
+            item.className = 'revision-item';
+            item.onclick = () => showPeekModal(p._id);
+            item.innerHTML = `<span class="revision-item-title">${p.title}</span><span class="difficulty-badge difficulty-${p.difficulty}">${p.difficulty}</span>`;
+            list.appendChild(item);
+        });
+        modal.style.display = 'flex';
+    }
+    function closeDayDetailModal(e) { if (e.target.classList.contains('modal-overlay') || e.target.classList.contains('modal-close')) { document.getElementById('dayDetailModal').style.display = 'none'; } }
+
+    function renderTags() {
+        tagsContainer.querySelectorAll('.tag').forEach(el => el.remove());
+        currentTags.slice().reverse().forEach(text => {
+            const tagEl = document.createElement('div');
+            tagEl.classList.add('tag');
+            tagEl.innerHTML = `<span>${text}</span><span class="tag-remove" onclick="removeTag('${text}')">&times;</span>`;
+            tagsContainer.prepend(tagEl);
+        });
+        tagInput.value = '';
+    }
+    function addTag(text) { text = text.trim(); if (text && !currentTags.includes(text)) { currentTags.push(text); renderTags(); } tagInput.value = ''; suggestionsPanel.style.display = 'none'; }
+    function removeTag(text) { currentTags = currentTags.filter(t => t !== text); renderTags(); }
+    tagInput.addEventListener('keyup', e => {
+        if (e.key === 'Enter' || e.key === ',') { addTag(e.target.value.replace(',', '')); }
+        else {
+            const text = e.target.value.toLowerCase();
+            if (text.length > 0) {
+                const filtered = allTags.filter(t => t.toLowerCase().includes(text) && !currentTags.includes(t));
+                renderSuggestions(filtered);
+            } else { suggestionsPanel.style.display = 'none'; }
+        }
+    });
+    function renderSuggestions(suggestions) {
+        if (suggestions.length === 0) { suggestionsPanel.style.display = 'none'; return; }
+        suggestionsPanel.innerHTML = '';
+        suggestions.forEach(suggestion => {
+            const item = document.createElement('div');
+            item.classList.add('suggestion-item');
+            item.textContent = suggestion;
+            item.onclick = () => addTag(suggestion);
+            suggestionsPanel.appendChild(item);
+        });
+        suggestionsPanel.style.display = 'block';
+    }
+    document.addEventListener('click', e => { if (!tagsContainer.contains(e.target) && !suggestionsPanel.contains(e.target)) { suggestionsPanel.style.display = 'none'; } });
+
+    // --- THEME TOGGLE ---
+    const themeToggleBtn = document.getElementById('theme-toggle-btn');
+    function initializeTheme() {
+        const currentTheme = localStorage.getItem('theme') || 'light';
+        document.body.classList.toggle('dark-mode', currentTheme === 'dark');
+        updateEditorThemes(currentTheme);
+    }
+    themeToggleBtn.addEventListener('click', () => {
+        const isDarkMode = document.body.classList.toggle('dark-mode');
+        const theme = isDarkMode ? 'dark' : 'light';
+        localStorage.setItem('theme', theme);
+        updateEditorThemes(theme);
+    });
+    function updateEditorThemes(theme) {
+        const editorTheme = theme === 'dark' ? 'dracula' : 'eclipse';
+        if (editor) editor.setOption('theme', editorTheme);
+        if (peekEditor) peekEditor.setOption('theme', editorTheme);
+    }
+    </script>
+</body>
+</html>

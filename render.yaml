@@ -1,0 +1,25 @@
+services:
+  # The Python web server
+  - type: web
+    name: algoradar-app
+    env: python
+    plan: free # Or your preferred plan
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn wsgi:app"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: MONGO_URI
+        fromSecret: true # Will be set in the Render dashboard
+      - key: SECRET_KEY
+        fromSecret: true # Will be set in the Render dashboard
+      - key: REDIS_URL # Render provides this automatically
+        fromService:
+          type: redis
+          name: algoradar-redis
+          property: connectionString
+
+  # The Redis database
+  - type: redis
+    name: algoradar-redis
+    plan: free # Or your preferred plan

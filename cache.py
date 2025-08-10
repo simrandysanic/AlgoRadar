@@ -1,18 +1,26 @@
 import json
 import redis
+import os
 from flask import current_app
 
 def init_redis(app):
+    """Initializes Redis connection from a URL or host/port."""
+    redis_url = os.getenv('REDIS_URL')
     try:
-        app.redis = redis.Redis(
-            host=app.config.get('REDIS_HOST', 'localhost'),
-            port=app.config.get('REDIS_PORT', 6379),
-            decode_responses=True
-        )
-        app.redis.ping()  # Test connection
-        app.logger.info("Redis connected successfully")
+        if redis_url:
+            # Use the URL provided by Render
+            app.redis = redis.from_url(redis_url, decode_responses=True)
+        else:
+            # Fallback for local development
+            app.redis = redis.Redis(
+                host=app.config.get('REDIS_HOST', 'localhost'),
+                port=app.config.get('REDIS_PORT', 6379),
+                decode_responses=True
+            )
+        app.redis.ping()
+        app.logger.info("Redis connected successfully.")
     except redis.ConnectionError as e:
-        app.redis = None  # Fallback to no caching
+        app.redis = None
         app.logger.warning(f"Redis unavailable, caching disabled: {str(e)}")
 
 def cache_get_questions(user_email, query_params):
