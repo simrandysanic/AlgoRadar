@@ -118,20 +118,19 @@ def get_questions():
 #         questions = get_questions_by_user(user_email, {'user_email': user_email})
 @questions_bp.route('/dashboard', methods=['GET'])
 def dashboard():
-    # Skip token verification for now
-    user_email = "test@example.com"  # This must exist in your DB
-
     try:
-        # Get all questions for the user
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'Missing or invalid token'}), 401
+        token = auth_header.split(' ')[1]
+        user_email = verify_jwt_token(token)
+        if not user_email:
+            return jsonify({'error': 'Invalid or expired token'}), 401
         questions = get_questions_by_user(user_email, {'user_email': user_email})
-
-        # Calculate total problems and difficulty distribution
         total_problems = len(questions)
         difficulty_counts = {'Easy': 0, 'Medium': 0, 'Hard': 0}
         for q in questions:
             difficulty_counts[q['difficulty']] += 1
-
-        # Calculate streak (days with at least one solved problem)
         solved_dates = sorted([q['timestamp'].date() for q in questions if q['solved']])
         streak = 0
         if solved_dates:
@@ -143,25 +142,13 @@ def dashboard():
                     current_date -= timedelta(days=1)
                 else:
                     break
-
-        # Prepare data for pie chart
         chart_data = {
             'labels': ['Easy', 'Medium', 'Hard'],
             'datasets': [{
-                'data': [
-                    difficulty_counts['Easy'],
-                    difficulty_counts['Medium'],
-                    difficulty_counts['Hard']
-                ],
+                'data': [difficulty_counts['Easy'], difficulty_counts['Medium'], difficulty_counts['Hard']],
                 'backgroundColor': ['#36A2EB', '#FFCE56', '#FF6384']
             }]
         }
-
-        return render_template(
-            'dashboard.html',
-            total_problems=total_problems,
-            streak=streak,
-            chart_data=chart_data
-        )
+        return render_template('dashboard.html', total_problems=total_problems, streak=streak, chart_data=chart_data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
