@@ -4,7 +4,6 @@ from config import Config
 from auth import auth_bp
 from routes import questions_bp
 import redis
-from db import init_db
 from cache import init_redis
 
 def create_app():
