@@ -43,6 +43,7 @@
 </head>
 <body>
     <h1>DSA Tracker Dashboard</h1>
+
     <div class="stats">
         <div class="stat-card">
             <h2>Total Problems</h2>
@@ -53,12 +54,16 @@
             <p>{{ streak }} days</p>
         </div>
     </div>
+
     <canvas id="difficultyChart"></canvas>
+
     <script>
+        const chartData = {{ chart_data | tojson | safe }};
         const ctx = document.getElementById('difficultyChart').getContext('2d');
+
         new Chart(ctx, {
             type: 'pie',
-            data: {{ chart_data | tojson }},
+            data: chartData,
             options: {
                 responsive: true,
                 plugins: {
