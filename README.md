@@ -36,7 +36,3 @@ A full-stack web application designed to help developers track and visualize the
 3.  Ensure Docker Desktop is running.
 4.  Run the command: `docker-compose up --build`
 5.  Access the application at `http://localhost:5000`.
-
-### License
-
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
