@@ -1,7 +1,5 @@
 # AlgoRadar
 
-**Live Site**: [https://algoradar.onrender.com](https://algoradar.onrender.com)
-
 A full-stack web application designed to help developers track and visualize their progress while studying Data Structures and Algorithms.
 
 ---
